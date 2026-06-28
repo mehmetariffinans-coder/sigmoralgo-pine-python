@@ -1,0 +1,28 @@
+//@version=5
+strategy("RSI + MACD Strategy", overlay=true)
+
+// Inputs
+rsiLength = input(14, title="RSI Length")
+rsiOversold = input(30, title="RSI Oversold")
+rsiOverbought = input(70, title="RSI Overbought")
+
+fastLength = input(12, title="MACD Fast")
+slowLength = input(26, title="MACD Slow")
+signalSmoothing = input(9, title="MACD Signal")
+
+// Calculate indicators
+rsi = ta.rsi(close, rsiLength)
+[macdLine, signalLine, histogram] = ta.macd(close, fastLength, slowLength, signalSmoothing)
+
+// Entry conditions
+rsiBullish = rsi > rsiOversold
+macdBullish = macdLine > signalLine
+macdCrossover = ta.cross(macdLine, signalLine)
+
+// Strategy logic
+if rsiBullish and macdBullish and macdCrossover
+    strategy.entry("Long", strategy.long, qty=1)
+
+// Exit conditions
+if rsi > rsiOverbought
+    strategy.exit("Exit Long", "Long", stop=close * 0.95)

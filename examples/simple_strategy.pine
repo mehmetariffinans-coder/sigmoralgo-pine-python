@@ -1,0 +1,16 @@
+//@version=5
+strategy("Simple MA Crossover", overlay=true)
+
+// Input parameters
+fastLength = input(12, title="Fast MA Length")
+slowLength = input(26, title="Slow MA Length")
+
+// Calculate moving averages
+fastMA = ta.sma(close, fastLength)
+slowMA = ta.sma(close, slowLength)
+
+// Strategy logic
+if fastMA > slowMA
+    strategy.entry("Long", strategy.long)
+else if fastMA < slowMA
+    strategy.close("Long")
