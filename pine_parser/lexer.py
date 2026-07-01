@@ -1,8 +1,8 @@
-"""Lexer for Pine Script - Tokenizes Pine Script code"""
+"""Enhanced Lexer for Pine Script with TradingView support"""
 
 import re
 from typing import List, Optional
-from .token_types import Token, TokenType, KEYWORDS
+from .token_types import Token, TokenType, KEYWORDS, BUILTIN_SERIES
 
 class Lexer:
     """Tokenizes Pine Script code into tokens"""
@@ -42,6 +42,27 @@ class Lexer:
         """Skip whitespace but not newlines"""
         while self.peek() and self.peek() in ' \t\r':
             self.advance()
+    
+    def skip_license_comment(self):
+        """Skip license header comments at start of file"""
+        if self.peek() == '/' and self.peek(1) == '/':
+            # Check if it contains "This Pine Script" or "Mozilla Public License"
+            start_pos = self.position
+            line_content = ''
+            while self.peek() and self.peek() != '\n':
+                line_content += self.peek()
+                self.advance()
+            
+            if 'This Pine Script' in line_content or 'Mozilla' in line_content or '©' in line_content:
+                if self.peek() == '\n':
+                    self.advance()
+                return True
+            else:
+                # Not a license comment, restore position
+                self.position = start_pos
+                self.column -= len(line_content)
+        
+        return False
     
     def skip_comment(self):
         """Skip single-line or multi-line comments"""
@@ -121,7 +142,7 @@ class Lexer:
         while self.peek() and (self.peek().isalnum() or self.peek() in '_'):
             identifier += self.advance()
         
-        # Check if it's a keyword
+        # Check if it's a keyword or built-in series
         token_type = KEYWORDS.get(identifier.lower(), TokenType.IDENTIFIER)
         
         return Token(token_type, identifier, start_line, start_column)
@@ -129,6 +150,10 @@ class Lexer:
     def tokenize(self) -> List[Token]:
         """Tokenize the input code"""
         self.tokens = []
+        
+        # Skip license comments at start of file
+        while self.skip_license_comment():
+            pass
         
         while self.position < len(self.code):
             self.skip_whitespace()
@@ -156,7 +181,7 @@ class Lexer:
                 self.tokens.append(self.read_number())
             
             # Strings
-            elif char in '\"\'':
+            elif char in '\\"\'':
                 self.tokens.append(self.read_string(char))
             
             # Identifiers and keywords
@@ -278,6 +303,10 @@ class Lexer:
             elif char == ':':
                 self.advance()
                 self.tokens.append(Token(TokenType.COLON, ':', line, column))
+            
+            elif char == '@':
+                self.advance()
+                self.tokens.append(Token(TokenType.AT, '@', line, column))
             
             else:
                 self.error(f"Unexpected character: {char!r}")

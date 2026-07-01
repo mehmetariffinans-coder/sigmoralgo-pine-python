@@ -1,7 +1,7 @@
-"""AST Node definitions for Pine Script"""
+"""AST Node definitions for Pine Script with TradingView Support"""
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 
 @dataclass
 class ASTNode:
@@ -9,7 +9,7 @@ class ASTNode:
     line: int = 0
     column: int = 0
 
-# Literals
+# ============ LITERALS ============
 
 @dataclass
 class Number(ASTNode):
@@ -36,7 +36,15 @@ class NA(ASTNode):
     """NA (Not Available) literal"""
     pass
 
-# Expressions
+# ============ PINE SERIES ============
+
+@dataclass
+class SeriesBuiltin(ASTNode):
+    """Pine Script built-in series (close, open, high, low, volume, etc.)"""
+    name: str = ""  # close, open, high, low, volume, hl2, hlc3, ohlc4, time, bar_index
+    offset: Optional[ASTNode] = None  # close[1] için offset
+
+# ============ EXPRESSIONS ============
 
 @dataclass
 class BinaryOp(ASTNode):
@@ -63,7 +71,7 @@ class Assignment(ASTNode):
     """Variable assignment (e.g., x = 5)"""
     target: str = ""
     value: ASTNode = None
-    operator: str = "="  # Can be =, +=, -=, etc.
+    operator: str = "="  # =, +=, -=, etc.
 
 @dataclass
 class MemberAccess(ASTNode):
@@ -90,7 +98,7 @@ class ArrayAccess(ASTNode):
     array: ASTNode = None
     index: ASTNode = None
 
-# Statements
+# ============ STATEMENTS ============
 
 @dataclass
 class Block(ASTNode):
@@ -133,7 +141,7 @@ class ContinueStatement(ASTNode):
     """Continue statement"""
     pass
 
-# Declarations
+# ============ DECLARATIONS ============
 
 @dataclass
 class VariableDeclaration(ASTNode):
@@ -150,7 +158,109 @@ class FunctionDeclaration(ASTNode):
     body: ASTNode = None
     return_type: Optional[str] = None
 
+# ============ PINE SCRIPT SPECIFIC ============
+
+@dataclass
+class VersionDirective(ASTNode):
+    """Pine Script version directive (@version=5)"""
+    version: int = 5
+
+@dataclass
+class IndicatorDirective(ASTNode):
+    """Indicator directive with metadata"""
+    title: Optional[str] = None
+    short_title: Optional[str] = None
+    overlay: bool = False
+    scale: Optional[str] = None  # scale.left, scale.right
+    precision: Optional[int] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class StrategyDirective(ASTNode):
+    """Strategy directive with metadata"""
+    title: Optional[str] = None
+    short_title: Optional[str] = None
+    overlay: bool = False
+    precision: Optional[int] = None
+    currency: Optional[str] = None
+    initial_capital: Optional[float] = None
+    default_qty_type: Optional[str] = None
+    default_qty_value: Optional[float] = None
+    commission_type: Optional[str] = None
+    commission_value: Optional[float] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class PlotCall(ASTNode):
+    """plot() function call"""
+    series: ASTNode = None
+    title: Optional[str] = None
+    color: Optional[str] = None
+    linewidth: Optional[int] = None
+    style: Optional[str] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class PlotShapeCall(ASTNode):
+    """plotshape() function call"""
+    series: ASTNode = None
+    title: Optional[str] = None
+    shape: Optional[str] = None
+    location: Optional[str] = None
+    color: Optional[str] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class PlotCharCall(ASTNode):
+    """plotchar() function call"""
+    series: ASTNode = None
+    title: Optional[str] = None
+    char: Optional[str] = None
+    location: Optional[str] = None
+    color: Optional[str] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class AlertCall(ASTNode):
+    """alert() function call"""
+    message: ASTNode = None
+    freq: Optional[str] = None
+
+@dataclass
+class StrategyEntryCall(ASTNode):
+    """strategy.entry() call"""
+    id: ASTNode = None
+    direction: ASTNode = None
+    qty: Optional[ASTNode] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class StrategyExitCall(ASTNode):
+    """strategy.exit() call"""
+    id: ASTNode = None
+    from_entry: Optional[ASTNode] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class StrategyCloseCall(ASTNode):
+    """strategy.close() call"""
+    id: ASTNode = None
+
+@dataclass
+class InputCall(ASTNode):
+    """input() function call for user inputs"""
+    default_value: ASTNode = None
+    title: Optional[str] = None
+    type: Optional[str] = None
+    options: Optional[List[ASTNode]] = None
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+# ============ PROGRAM ============
+
 @dataclass
 class Program(ASTNode):
-    """Root program node"""
+    """Root program node - Pine Script complete script"""
+    version: Optional[VersionDirective] = None
+    directive: Optional[ASTNode] = None  # IndicatorDirective or StrategyDirective
     statements: List[ASTNode] = field(default_factory=list)
+    license: Optional[str] = None  # License comment if present
