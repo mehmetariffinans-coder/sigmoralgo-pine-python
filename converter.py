@@ -1,4 +1,4 @@
-"""Main Pine Script to Python Converter"""
+"""Main Pine Script to Python Converter with TradingView support"""
 
 from pine_parser import Lexer, Parser, CodeGenerator, SemanticAnalyzer
 
@@ -12,13 +12,22 @@ class PineScriptConverter:
         """Convert Pine Script code to Python
         
         Args:
-            pine_code: Pine Script source code
+            pine_code: Pine Script source code (including TradingView directives)
         
         Returns:
             Python source code
         
         Raises:
             SyntaxError: If there are syntax errors in the input
+        
+        Example:
+            >>> code = '''
+            ... //@version=6
+            ... indicator("My Indicator")
+            ... plot(close)
+            ... '''
+            >>> converter = PineScriptConverter()
+            >>> python_code = converter.convert(code)
         """
         self.errors = []
         
@@ -84,17 +93,69 @@ class PineScriptConverter:
 
 
 if __name__ == "__main__":
-    # Example usage
-    pine_code = """
-    var x = close > open
-    if x
-        var y = 5
+    # Example 1: Simple indicator with plot
+    pine_code_1 = """
+    //@version=6
+    indicator("Komut dosyam")
+    plot(close)
     """
+    
+    print("=" * 60)
+    print("EXAMPLE 1: Simple Indicator")
+    print("=" * 60)
+    print("\nPine Script Input:")
+    print(pine_code_1)
     
     converter = PineScriptConverter()
     try:
-        python_code = converter.convert(pine_code)
-        print("Generated Python Code:")
+        python_code = converter.convert(pine_code_1)
+        print("\nGenerated Python Code:")
+        print(python_code)
+    except SyntaxError as e:
+        print(f"Error: {e}")
+    
+    # Example 2: Indicator with SMA
+    pine_code_2 = """
+    //@version=6
+    indicator("SMA Indicator", overlay=true)
+    ma = ta.sma(close, 20)
+    plot(ma, color=color.red)
+    """
+    
+    print("\n" + "=" * 60)
+    print("EXAMPLE 2: SMA Indicator")
+    print("=" * 60)
+    print("\nPine Script Input:")
+    print(pine_code_2)
+    
+    try:
+        python_code = converter.convert(pine_code_2)
+        print("\nGenerated Python Code:")
+        print(python_code)
+    except SyntaxError as e:
+        print(f"Error: {e}")
+    
+    # Example 3: Complex indicator with conditions
+    pine_code_3 = """
+    //@version=6
+    indicator("RSI Strategy")
+    rsi = ta.rsi(close, 14)
+    if rsi > 70
+        alert("Overbought")
+    if rsi < 30
+        alert("Oversold")
+    plot(rsi)
+    """
+    
+    print("\n" + "=" * 60)
+    print("EXAMPLE 3: RSI with Conditions")
+    print("=" * 60)
+    print("\nPine Script Input:")
+    print(pine_code_3)
+    
+    try:
+        python_code = converter.convert(pine_code_3)
+        print("\nGenerated Python Code:")
         print(python_code)
     except SyntaxError as e:
         print(f"Error: {e}")
