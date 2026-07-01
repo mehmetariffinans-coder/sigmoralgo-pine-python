@@ -1,4 +1,4 @@
-"""Parser for Pine Script - Builds AST from tokens"""
+"""Parser for Pine Script - Builds AST from tokens (FIXED)"""
 
 from typing import List, Optional
 from .token_types import Token, TokenType
@@ -392,15 +392,21 @@ class Parser:
         return self.parse_postfix()
     
     def parse_postfix(self) -> ast.ASTNode:
-        """Parse postfix expressions (member access, function call, array access)"""
-        expr = self.parse_assignment()
+        """Parse postfix expressions (member access, function call, array access)
         
+        DÜZELTME: primary -> postfix operatörleri -> assignment
+        Doğru hiyerarşi: parse_primary() > postfix loop > assignment
+        """
+        # Önce primary expression parse et
+        expr = self.parse_primary()
+        
+        # Ardından postfix operatörleri uygula
         while True:
             if self.match(TokenType.DOT):
                 self.advance()
                 member_token = self.expect(TokenType.IDENTIFIER)
                 
-                # Check if it's a method call
+                # Method call mı kontrol et
                 if self.match(TokenType.LPAREN):
                     self.advance()
                     args = self.parse_arguments()
@@ -433,8 +439,8 @@ class Parser:
                     column=expr.column
                 )
             
+            # Bare identifier için function call
             elif self.match(TokenType.LPAREN) and isinstance(expr, ast.Identifier):
-                # Function call
                 self.advance()
                 args = self.parse_arguments()
                 self.expect(TokenType.RPAREN)
@@ -449,17 +455,16 @@ class Parser:
             else:
                 break
         
-        return expr
+        # Postfix operatörleri uyguladıktan sonra assignment kontrol et
+        return self.parse_assignment_check(expr)
     
-    def parse_assignment(self) -> ast.ASTNode:
-        """Parse assignment expression"""
-        expr = self.parse_primary()
-        
+    def parse_assignment_check(self, expr: ast.ASTNode) -> ast.ASTNode:
+        """Assignment operatörlerini kontrol et (postfix operatörlerinden sonra)"""
         if self.match(TokenType.ASSIGN, TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN,
                       TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN):
             
             if not isinstance(expr, ast.Identifier):
-                self.error("Invalid assignment target")
+                self.error("Geçersiz assignment hedefi")
             
             op_token = self.advance()
             value = self.parse_expression()
@@ -543,7 +548,7 @@ class Parser:
             return expr
         
         else:
-            self.error(f"Unexpected token: {token.type.name}")
+            self.error(f"Beklenmeyen token: {token.type.name}")
     
     def skip_statement_end(self):
         """Skip semicolon or newline at end of statement"""
