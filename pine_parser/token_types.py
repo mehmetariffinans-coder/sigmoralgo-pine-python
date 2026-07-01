@@ -1,4 +1,4 @@
-"""Token types for Pine Script lexer"""
+"""Token types for Pine Script lexer with TradingView support"""
 
 from enum import Enum, auto
 
@@ -22,6 +22,15 @@ class TokenType(Enum):
     FUNCTION = auto()
     RETURN = auto()
     IMPORT = auto()
+    
+    # Pine Script Keywords
+    INDICATOR = auto()
+    STRATEGY = auto()
+    PLOT = auto()
+    PLOTSHAPE = auto()
+    PLOTCHAR = auto()
+    ALERT = auto()
+    INPUT = auto()
     
     # Operators
     PLUS = auto()
@@ -66,6 +75,7 @@ class TokenType(Enum):
     COMMA = auto()     # ,
     DOT = auto()       # .
     ARROW = auto()     # =>
+    AT = auto()        # @
     
     # Special
     NEWLINE = auto()
@@ -100,4 +110,18 @@ KEYWORDS = {
     'and': TokenType.AND,
     'or': TokenType.OR,
     'not': TokenType.NOT,
+    'indicator': TokenType.INDICATOR,
+    'strategy': TokenType.STRATEGY,
+    'plot': TokenType.PLOT,
+    'plotshape': TokenType.PLOTSHAPE,
+    'plotchar': TokenType.PLOTCHAR,
+    'alert': TokenType.ALERT,
+    'input': TokenType.INPUT,
+}
+
+# Pine Script built-in series
+BUILTIN_SERIES = {
+    'close', 'open', 'high', 'low', 'volume',
+    'hl2', 'hlc3', 'ohlc4',
+    'time', 'bar_index', 'bar_time',
 }
