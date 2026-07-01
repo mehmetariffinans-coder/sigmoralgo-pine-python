@@ -1,11 +1,12 @@
-"""Enhanced Lexer for Pine Script with TradingView support"""
+"""Lexer for Pine Script 6 - Tokenizes Pine Script code"""
 
 import re
 from typing import List, Optional
 from .token_types import Token, TokenType, KEYWORDS, BUILTIN_SERIES
 
+
 class Lexer:
-    """Tokenizes Pine Script code into tokens"""
+    """Tokenizes Pine Script 6 code into tokens"""
     
     def __init__(self, code: str):
         self.code = code
@@ -46,7 +47,6 @@ class Lexer:
     def skip_license_comment(self):
         """Skip license header comments at start of file"""
         if self.peek() == '/' and self.peek(1) == '/':
-            # Check if it contains "This Pine Script" or "Mozilla Public License"
             start_pos = self.position
             line_content = ''
             while self.peek() and self.peek() != '\n':
@@ -58,7 +58,6 @@ class Lexer:
                     self.advance()
                 return True
             else:
-                # Not a license comment, restore position
                 self.position = start_pos
                 self.column -= len(line_content)
         
@@ -94,7 +93,7 @@ class Lexer:
             while self.peek() and self.peek() in '0123456789abcdefABCDEF':
                 number_str += self.advance()
         else:
-            # Regular decimal
+            # Regular decimal/float
             while self.peek() and (self.peek().isdigit() or self.peek() == '.'):
                 number_str += self.advance()
         
@@ -142,7 +141,7 @@ class Lexer:
         while self.peek() and (self.peek().isalnum() or self.peek() in '_'):
             identifier += self.advance()
         
-        # Check if it's a keyword or built-in series
+        # Check if it's a keyword
         token_type = KEYWORDS.get(identifier.lower(), TokenType.IDENTIFIER)
         
         return Token(token_type, identifier, start_line, start_column)
@@ -181,7 +180,7 @@ class Lexer:
                 self.tokens.append(self.read_number())
             
             # Strings
-            elif char in '\\"\'':
+            elif char in '\"\'':
                 self.tokens.append(self.read_string(char))
             
             # Identifiers and keywords
@@ -207,7 +206,15 @@ class Lexer:
             
             elif char == '*':
                 self.advance()
-                if self.peek() == '=':
+                if self.peek() == '*':
+                    # ** operator (Pine 6)
+                    self.advance()
+                    if self.peek() == '=':
+                        self.advance()
+                        self.tokens.append(Token(TokenType.POW_ASSIGN, '**=', line, column))
+                    else:
+                        self.tokens.append(Token(TokenType.POW, '**', line, column))
+                elif self.peek() == '=':
                     self.advance()
                     self.tokens.append(Token(TokenType.STAR_ASSIGN, '*=', line, column))
                 else:
@@ -223,7 +230,11 @@ class Lexer:
             
             elif char == '%':
                 self.advance()
-                self.tokens.append(Token(TokenType.PERCENT, '%', line, column))
+                if self.peek() == '=':
+                    self.advance()
+                    self.tokens.append(Token(TokenType.MOD_ASSIGN, '%=', line, column))
+                else:
+                    self.tokens.append(Token(TokenType.PERCENT, '%', line, column))
             
             elif char == '=':
                 self.advance()
@@ -302,7 +313,12 @@ class Lexer:
             
             elif char == ':':
                 self.advance()
-                self.tokens.append(Token(TokenType.COLON, ':', line, column))
+                if self.peek() == ':':
+                    # :: namespace operator (Pine 6)
+                    self.advance()
+                    self.tokens.append(Token(TokenType.COLON_COLON, '::', line, column))
+                else:
+                    self.tokens.append(Token(TokenType.COLON, ':', line, column))
             
             elif char == '@':
                 self.advance()
