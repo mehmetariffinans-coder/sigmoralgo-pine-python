@@ -1,8 +1,9 @@
-"""Parser for Pine Script - Builds AST from tokens (FIXED)"""
+"""Parser for Pine Script 6 - Builds AST from tokens"""
 
 from typing import List, Optional
 from .token_types import Token, TokenType
 from . import ast_nodes as ast
+
 
 class Parser:
     """Parses tokens into an Abstract Syntax Tree"""
@@ -48,9 +49,29 @@ class Parser:
     def parse(self) -> ast.Program:
         """Parse the token stream into an AST"""
         statements = []
+        version = None
+        directive = None
         
         self.skip_newlines()
         
+        # Parse version directive if present
+        if self.peek().type == TokenType.AT and self.peek(1).type == TokenType.IDENTIFIER:
+            if self.peek(1).value == 'version':
+                version = self.parse_version_directive()
+                self.skip_newlines()
+        
+        # Parse indicator/strategy/library directive
+        if self.peek().type == TokenType.INDICATOR:
+            directive = self.parse_indicator_directive()
+            self.skip_newlines()
+        elif self.peek().type == TokenType.STRATEGY:
+            directive = self.parse_strategy_directive()
+            self.skip_newlines()
+        elif self.peek().type == TokenType.LIBRARY:
+            directive = self.parse_library_directive()
+            self.skip_newlines()
+        
+        # Parse statements
         while self.peek().type != TokenType.EOF:
             self.skip_newlines()
             
@@ -63,12 +84,118 @@ class Parser:
             
             self.skip_newlines()
         
-        return ast.Program(statements=statements)
+        return ast.Program(version=version, directive=directive, statements=statements)
+    
+    def parse_version_directive(self) -> ast.VersionDirective:
+        """Parse @version=N directive"""
+        self.expect(TokenType.AT)
+        name_token = self.expect(TokenType.IDENTIFIER)
+        self.expect(TokenType.ASSIGN)
+        version_token = self.expect(TokenType.NUMBER)
+        self.skip_statement_end()
+        
+        return ast.VersionDirective(
+            version=int(float(version_token.value)),
+            line=name_token.line,
+            column=name_token.column
+        )
+    
+    def parse_indicator_directive(self) -> ast.IndicatorDirective:
+        """Parse indicator() directive"""
+        indicator_token = self.expect(TokenType.INDICATOR)
+        self.expect(TokenType.LPAREN)
+        
+        kwargs = self.parse_directive_args()
+        self.expect(TokenType.RPAREN)
+        self.skip_statement_end()
+        
+        return ast.IndicatorDirective(
+            title=kwargs.get('title'),
+            short_title=kwargs.get('short_title'),
+            overlay=kwargs.get('overlay', False),
+            scale=kwargs.get('scale'),
+            precision=kwargs.get('precision'),
+            timeframe=kwargs.get('timeframe'),
+            extra=kwargs,
+            line=indicator_token.line,
+            column=indicator_token.column
+        )
+    
+    def parse_strategy_directive(self) -> ast.StrategyDirective:
+        """Parse strategy() directive"""
+        strategy_token = self.expect(TokenType.STRATEGY)
+        self.expect(TokenType.LPAREN)
+        
+        kwargs = self.parse_directive_args()
+        self.expect(TokenType.RPAREN)
+        self.skip_statement_end()
+        
+        return ast.StrategyDirective(
+            title=kwargs.get('title'),
+            short_title=kwargs.get('short_title'),
+            overlay=kwargs.get('overlay', False),
+            precision=kwargs.get('precision'),
+            currency=kwargs.get('currency'),
+            initial_capital=kwargs.get('initial_capital'),
+            default_qty_type=kwargs.get('default_qty_type'),
+            default_qty_value=kwargs.get('default_qty_value'),
+            commission_type=kwargs.get('commission_type'),
+            commission_value=kwargs.get('commission_value'),
+            slippage=kwargs.get('slippage'),
+            extra=kwargs,
+            line=strategy_token.line,
+            column=strategy_token.column
+        )
+    
+    def parse_library_directive(self) -> ast.LibraryDirective:
+        """Parse library() directive (Pine 6)"""
+        library_token = self.expect(TokenType.LIBRARY)
+        self.expect(TokenType.LPAREN)
+        
+        kwargs = self.parse_directive_args()
+        self.expect(TokenType.RPAREN)
+        self.skip_statement_end()
+        
+        return ast.LibraryDirective(
+            title=kwargs.get('title'),
+            version=kwargs.get('version'),
+            extra=kwargs,
+            line=library_token.line,
+            column=library_token.column
+        )
+    
+    def parse_directive_args(self) -> dict:
+        """Parse keyword arguments in directive"""
+        kwargs = {}
+        
+        while not self.match(TokenType.RPAREN) and not self.match(TokenType.EOF):
+            key_token = self.expect(TokenType.IDENTIFIER)
+            self.expect(TokenType.ASSIGN)
+            
+            # Parse value
+            if self.match(TokenType.TRUE):
+                self.advance()
+                kwargs[key_token.value] = True
+            elif self.match(TokenType.FALSE):
+                self.advance()
+                kwargs[key_token.value] = False
+            elif self.match(TokenType.NUMBER):
+                num_token = self.advance()
+                kwargs[key_token.value] = float(num_token.value)
+            elif self.match(TokenType.STRING):
+                str_token = self.advance()
+                kwargs[key_token.value] = str_token.value
+            else:
+                self.error("Expected literal value in directive")
+            
+            if self.match(TokenType.COMMA):
+                self.advance()
+        
+        return kwargs
     
     def parse_statement(self) -> Optional[ast.ASTNode]:
         """Parse a single statement"""
         self.skip_newlines()
-        
         token = self.peek()
         
         if token.type == TokenType.VAR:
@@ -81,6 +208,14 @@ class Parser:
             return self.parse_for_statement()
         elif token.type == TokenType.WHILE:
             return self.parse_while_statement()
+        elif token.type == TokenType.BREAK:
+            self.advance()
+            self.skip_statement_end()
+            return ast.BreakStatement(line=token.line, column=token.column)
+        elif token.type == TokenType.CONTINUE:
+            self.advance()
+            self.skip_statement_end()
+            return ast.ContinueStatement(line=token.line, column=token.column)
         elif token.type == TokenType.RETURN:
             return self.parse_return_statement()
         elif token.type == TokenType.LBRACE:
@@ -92,9 +227,18 @@ class Parser:
             return self.parse_expression_statement()
     
     def parse_variable_declaration(self) -> ast.VariableDeclaration:
-        """Parse variable declaration: var x = 5"""
+        """Parse variable declaration: var x = 5 or var x: int = 5"""
         var_token = self.expect(TokenType.VAR)
         name_token = self.expect(TokenType.IDENTIFIER)
+        
+        var_type = None
+        is_varip = False
+        
+        # Check for type annotation: var x: int = 5
+        if self.match(TokenType.COLON):
+            self.advance()
+            type_token = self.expect(TokenType.IDENTIFIER)
+            var_type = type_token.value
         
         value = None
         if self.match(TokenType.ASSIGN):
@@ -105,13 +249,15 @@ class Parser:
         
         return ast.VariableDeclaration(
             name=name_token.value,
+            var_type=var_type,
             value=value,
+            is_varip=is_varip,
             line=var_token.line,
             column=var_token.column
         )
     
     def parse_function_declaration(self) -> ast.FunctionDeclaration:
-        """Parse function declaration"""
+        """Parse function declaration with optional return type (Pine 6)"""
         func_token = self.expect(TokenType.FUNCTION)
         name_token = self.expect(TokenType.IDENTIFIER)
         
@@ -119,19 +265,47 @@ class Parser:
         parameters = []
         
         while not self.match(TokenType.RPAREN):
-            param = self.expect(TokenType.IDENTIFIER)
-            parameters.append(param.value)
+            param_token = self.expect(TokenType.IDENTIFIER)
+            param_type = None
+            default_value = None
+            
+            # Type annotation: func(x: int, y: float = 1.0)
+            if self.match(TokenType.COLON):
+                self.advance()
+                type_token = self.expect(TokenType.IDENTIFIER)
+                param_type = type_token.value
+            
+            # Default value
+            if self.match(TokenType.ASSIGN):
+                self.advance()
+                default_value = self.parse_expression()
+            
+            parameters.append(ast.TypedParameter(
+                name=param_token.value,
+                param_type=param_type or 'unknown',
+                default_value=default_value,
+                line=param_token.line,
+                column=param_token.column
+            ))
             
             if self.match(TokenType.COMMA):
                 self.advance()
         
         self.expect(TokenType.RPAREN)
         
+        # Return type annotation: func() -> int
+        return_type = None
+        if self.match(TokenType.ARROW):
+            self.advance()
+            type_token = self.expect(TokenType.IDENTIFIER)
+            return_type = type_token.value
+        
         body = self.parse_block()
         
         return ast.FunctionDeclaration(
             name=name_token.value,
             parameters=parameters,
+            return_type=return_type,
             body=body,
             line=func_token.line,
             column=func_token.column
@@ -140,7 +314,6 @@ class Parser:
     def parse_if_statement(self) -> ast.IfStatement:
         """Parse if statement"""
         if_token = self.expect(TokenType.IF)
-        
         condition = self.parse_expression()
         then_body = self.parse_statement()
         
@@ -157,41 +330,57 @@ class Parser:
             column=if_token.column
         )
     
-    def parse_for_statement(self) -> ast.ForStatement:
-        """Parse for loop"""
+    def parse_for_statement(self) -> ast.ASTNode:
+        """Parse for loop (both C-style and for...in - Pine 6)"""
         for_token = self.expect(TokenType.FOR)
         self.expect(TokenType.LPAREN)
         
-        init = None
-        if not self.match(TokenType.SEMICOLON):
-            init = self.parse_expression()
-        self.expect(TokenType.SEMICOLON)
-        
-        condition = None
-        if not self.match(TokenType.SEMICOLON):
-            condition = self.parse_expression()
-        self.expect(TokenType.SEMICOLON)
-        
-        update = None
-        if not self.match(TokenType.RPAREN):
-            update = self.parse_expression()
-        self.expect(TokenType.RPAREN)
-        
-        body = self.parse_statement()
-        
-        return ast.ForStatement(
-            init=init,
-            condition=condition,
-            update=update,
-            body=body,
-            line=for_token.line,
-            column=for_token.column
-        )
+        # Check for for...in pattern
+        if self.peek().type == TokenType.IDENTIFIER and self.peek(1).type == TokenType.IN:
+            var_token = self.expect(TokenType.IDENTIFIER)
+            self.expect(TokenType.IN)
+            iterable = self.parse_expression()
+            self.expect(TokenType.RPAREN)
+            body = self.parse_statement()
+            
+            return ast.ForInStatement(
+                variable=var_token.value,
+                iterable=iterable,
+                body=body,
+                line=for_token.line,
+                column=for_token.column
+            )
+        else:
+            # C-style for loop
+            init = None
+            if not self.match(TokenType.SEMICOLON):
+                init = self.parse_expression()
+            self.expect(TokenType.SEMICOLON)
+            
+            condition = None
+            if not self.match(TokenType.SEMICOLON):
+                condition = self.parse_expression()
+            self.expect(TokenType.SEMICOLON)
+            
+            update = None
+            if not self.match(TokenType.RPAREN):
+                update = self.parse_expression()
+            self.expect(TokenType.RPAREN)
+            
+            body = self.parse_statement()
+            
+            return ast.ForStatement(
+                init=init,
+                condition=condition,
+                update=update,
+                body=body,
+                line=for_token.line,
+                column=for_token.column
+            )
     
     def parse_while_statement(self) -> ast.WhileStatement:
         """Parse while loop"""
         while_token = self.expect(TokenType.WHILE)
-        
         condition = self.parse_expression()
         body = self.parse_statement()
         
@@ -362,12 +551,29 @@ class Parser:
     
     def parse_multiplicative(self) -> ast.ASTNode:
         """Parse multiplication, division, and modulo"""
-        left = self.parse_unary()
+        left = self.parse_power()
         
         while self.match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT):
             op_token = self.advance()
-            right = self.parse_unary()
+            right = self.parse_power()
             left = ast.BinaryOp(
+                left=left,
+                operator=op_token.value,
+                right=right,
+                line=op_token.line,
+                column=op_token.column
+            )
+        
+        return left
+    
+    def parse_power(self) -> ast.ASTNode:
+        """Parse power operation (Pine 6: **) - Right-associative"""
+        left = self.parse_unary()
+        
+        if self.match(TokenType.POW):
+            op_token = self.advance()
+            right = self.parse_power()  # Right-associative
+            return ast.BinaryOp(
                 left=left,
                 operator=op_token.value,
                 right=right,
@@ -389,24 +595,35 @@ class Parser:
                 column=op_token.column
             )
         
+        return self.parse_lambda()
+    
+    def parse_lambda(self) -> ast.ASTNode:
+        """Parse lambda expression (Pine 6: x => x * 2)"""
+        # Look ahead for lambda pattern: identifier => expression
+        if self.peek().type == TokenType.IDENTIFIER and self.peek(1).type == TokenType.ARROW:
+            param_token = self.expect(TokenType.IDENTIFIER)
+            self.expect(TokenType.ARROW)
+            body = self.parse_additive()
+            
+            return ast.LambdaExpr(
+                parameter=param_token.value,
+                body=body,
+                line=param_token.line,
+                column=param_token.column
+            )
+        
         return self.parse_postfix()
     
     def parse_postfix(self) -> ast.ASTNode:
-        """Parse postfix expressions (member access, function call, array access)
-        
-        DÜZELTME: primary -> postfix operatörleri -> assignment
-        Doğru hiyerarşi: parse_primary() > postfix loop > assignment
-        """
-        # Önce primary expression parse et
+        """Parse postfix expressions (member access, function call, array access)"""
         expr = self.parse_primary()
         
-        # Ardından postfix operatörleri uygula
         while True:
             if self.match(TokenType.DOT):
                 self.advance()
                 member_token = self.expect(TokenType.IDENTIFIER)
                 
-                # Method call mı kontrol et
+                # Method call?
                 if self.match(TokenType.LPAREN):
                     self.advance()
                     args = self.parse_arguments()
@@ -439,7 +656,6 @@ class Parser:
                     column=expr.column
                 )
             
-            # Bare identifier için function call
             elif self.match(TokenType.LPAREN) and isinstance(expr, ast.Identifier):
                 self.advance()
                 args = self.parse_arguments()
@@ -455,16 +671,17 @@ class Parser:
             else:
                 break
         
-        # Postfix operatörleri uyguladıktan sonra assignment kontrol et
+        # Check for assignment after postfix
         return self.parse_assignment_check(expr)
     
     def parse_assignment_check(self, expr: ast.ASTNode) -> ast.ASTNode:
-        """Assignment operatörlerini kontrol et (postfix operatörlerinden sonra)"""
+        """Check for assignment operators after postfix"""
         if self.match(TokenType.ASSIGN, TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN,
-                      TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN):
+                      TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN, TokenType.MOD_ASSIGN,
+                      TokenType.POW_ASSIGN):
             
             if not isinstance(expr, ast.Identifier):
-                self.error("Geçersiz assignment hedefi")
+                self.error("Invalid assignment target")
             
             op_token = self.advance()
             value = self.parse_expression()
@@ -548,7 +765,7 @@ class Parser:
             return expr
         
         else:
-            self.error(f"Beklenmeyen token: {token.type.name}")
+            self.error(f"Unexpected token: {token.type.name}")
     
     def skip_statement_end(self):
         """Skip semicolon or newline at end of statement"""
